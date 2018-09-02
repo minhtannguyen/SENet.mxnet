@@ -4,7 +4,7 @@ Updated by Lin Xiong Jul-21, 2017
 """
 import argparse,logging,os
 import mxnet as mx
-from symbol_se_resnext_w_d import resnext
+from symbol_se_resnext_w_d_maxmin import resnext
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -64,6 +64,8 @@ def main():
 
     else:
          raise ValueError("do not support {} yet".format(args.data_type))
+    
+    mx.viz.plot_network(symbol)
     kv = mx.kvstore.create(args.kv_store)
     devs = mx.cpu() if args.gpus is None else [mx.gpu(int(i)) for i in args.gpus.split(',')]
     epoch_size = max(int(args.num_examples / args.batch_size / kv.num_workers), 1)
@@ -80,6 +82,7 @@ def main():
         import memonger
         symbol = memonger.search_plan(symbol, data=(args.batch_size, 3, 32, 32) if args.data_type=="cifar10"
                                                     else (args.batch_size, 3, 224, 224))
+    symbol.init_params(mx.init.Xavier(rnd_type='gaussian', factor_type="in", magnitude=2))
     train = mx.io.ImageRecordIter(
         path_imgrec         = os.path.join(args.data_dir, "train.rec") if args.data_type == 'cifar10' else
                               os.path.join(args.data_dir, "train_256_q90.rec") if args.aug_level == 1

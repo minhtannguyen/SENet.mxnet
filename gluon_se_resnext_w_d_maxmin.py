@@ -32,6 +32,20 @@ class NReLu(nn.HybridBlock):
 
     def hybrid_forward(self, F, x):
         return -F.Activation(-x, act_type='relu')
+    
+class NSigmoid(nn.HybridBlock):
+    """
+    -sigmoid(-x,0)
+    Parameters
+    ----------
+    Input shape: (N, C, W, H)
+    Output shape: (N, C * W * H)
+    """
+    def __init__(self, **kwargs):
+        super(NSigmoid, self).__init__(**kwargs)
+
+    def hybrid_forward(self, F, x):
+        return -F.Activation(-x, act_type='sigmoid')
 
 class residual_unit(nn.HybridBlock):
     """Return ResNext Unit symbol for building ResNext
@@ -62,47 +76,48 @@ class residual_unit(nn.HybridBlock):
         self.num_filter = num_filter
         # block 1
         self.conv1 = nn.Conv2D(in_channels=in_channels, channels=int(num_filter*0.5), kernel_size=(1,1), strides=(1,1), padding=(0,0), use_bias=False, prefix=name + '_conv1_')
-        self.bn1 = nn.BatchNorm(in_channels=int(num_filter*0.5), epsilon=2e-5, momentum=bn_mom, prefix=name + '_bn1_')
-        self.bn1min = nn.BatchNorm(in_channels=int(num_filter*0.5), epsilon=2e-5, momentum=bn_mom, prefix=name + '_bn1min_')
+        self.bn1 = nn.BatchNorm(in_channels=int(num_filter*0.5), epsilon=2e-5, momentum=bn_mom, prefix=name + '_batchnorm1_')
+        self.bn1min = nn.BatchNorm(in_channels=int(num_filter*0.5), epsilon=2e-5, momentum=bn_mom, prefix=name + '_batchnorm1min_')
         self.relu1 = nn.Activation(activation='relu', prefix=name + '_relu1_')
         self.relu1min = NReLu(prefix=name + '_relu1min_')
         
         # block 2
         self.conv2 = nn.Conv2D(in_channels=int(num_filter*0.5), channels=int(num_filter*0.5), groups=num_group, kernel_size=(3,3), strides=strides, padding=(1,1), use_bias=False, prefix=name + '_conv2_')
-        self.bn2 = nn.BatchNorm(in_channels=int(num_filter*0.5), epsilon=2e-5, momentum=bn_mom, prefix=name + '_bn2_')
-        self.bn2min = nn.BatchNorm(in_channels=int(num_filter*0.5), epsilon=2e-5, momentum=bn_mom, prefix=name + '_bn2min_')
+        self.bn2 = nn.BatchNorm(in_channels=int(num_filter*0.5), epsilon=2e-5, momentum=bn_mom, prefix=name + '_batchnorm2_')
+        self.bn2min = nn.BatchNorm(in_channels=int(num_filter*0.5), epsilon=2e-5, momentum=bn_mom, prefix=name + '_batchnorm2min_')
         self.relu2 = nn.Activation(activation='relu', prefix=name + '_relu2_')
         self.relu2min = NReLu(prefix=name + '_relu2min_')
         
         # block 3
         self.conv3 = nn.Conv2D(in_channels=int(num_filter*0.5), channels=num_filter, kernel_size=(1,1), strides=(1,1), padding=(0,0), use_bias=False, prefix=name + '_conv3_')
-        self.bn3 = nn.BatchNorm(in_channels=num_filter, epsilon=2e-5, momentum=bn_mom, prefix=name + '_bn3_')
-        self.bn3min = nn.BatchNorm(in_channels=num_filter, epsilon=2e-5, momentum=bn_mom, prefix=name + '_bn3min_')
+        self.bn3 = nn.BatchNorm(in_channels=num_filter, epsilon=2e-5, momentum=bn_mom, prefix=name + '_batchnorm3_')
+        self.bn3min = nn.BatchNorm(in_channels=num_filter, epsilon=2e-5, momentum=bn_mom, prefix=name + '_batchnorm3min_')
         
         # squeeze
         self.pool = nn.GlobalAvgPool2D(prefix=name + '_squeeze_') 
         self.flatten = nn.Flatten(prefix=name + '_flatten_')
         
         # excitation 1
-        self.fc1 = nn.Dense(units=int(num_filter*ratio), in_units=num_filter, prefix=name + '_excitation1_')
+        self.fc1 = nn.Dense(units=int(num_filter*ratio), in_units=num_filter, prefix=name + '_excitation1_dense_')
         self.reluex1 = nn.Activation(activation='relu', prefix=name + '_excitation1_relu_')
         self.reluex1min = NReLu(prefix=name + '_excitation1_relumin_')
         
         # excitation 2
-        self.fc2 = nn.Dense(units=num_filter, in_units=int(num_filter*ratio), prefix=name + '_excitation2_')
-        self.reluex2 = nn.Activation(activation='relu', prefix=name + '_excitation2_relu_')
-        self.reluex2min = NReLu(prefix=name + '_excitation2_relumin_')
+        self.fc2 = nn.Dense(units=num_filter, in_units=int(num_filter*ratio), prefix=name + '_excitation2_dense_')
+        self.reluex2 = nn.Activation(activation='sigmoid', prefix=name + '_excitation2_sigmoid_')
+        self.reluex2min = NSigmoid(prefix=name + '_excitation2_sigmoidmin_')
         
         if not dim_match:
-            self.fc_sc = nn.Conv2D(in_channels=in_channels, channels=num_filter, kernel_size=(1,1), strides=strides, use_bias=False, prefix=name + '_sc_')
-            self.bn_sc = nn.BatchNorm(in_channels=num_filter, epsilon=2e-5, momentum=bn_mom, prefix=name + '_sc_bn_')
-            self.bn_scmin = nn.BatchNorm(in_channels=num_filter, epsilon=2e-5, momentum=bn_mom, prefix=name + '_sc_bnmin_')
+            self.fc_sc = nn.Conv2D(in_channels=in_channels, channels=num_filter, kernel_size=(1,1), strides=strides, use_bias=False, prefix=name + '_sc_dense_')
+            self.bn_sc = nn.BatchNorm(in_channels=num_filter, epsilon=2e-5, momentum=bn_mom, prefix=name + '_sc_batchnorm_')
+            self.bn_scmin = nn.BatchNorm(in_channels=num_filter, epsilon=2e-5, momentum=bn_mom, prefix=name + '_sc_batchnormmin_')
             
         self.relu3 = nn.Activation(activation='relu', prefix=name + '_relu3_')
         self.relu3min = NReLu(prefix=name + '_relu3min_')
         
-    def hybrid_forward(self, F, x):
-        xmax = x[0]; xmin = x[1]
+    def hybrid_forward(self, F, xmax, xmin):
+        shortcutmax = xmax
+        shortcutmin = xmin
         
         # block 1
         xmax = self.conv1(xmax)
@@ -150,20 +165,17 @@ class residual_unit(nn.HybridBlock):
         xmin = self.fc2(xmin)
         xmin = self.reluex2min(xmin)
         
-        bn3 = F.broadcast_mul(bn3, F.reshape(data=xmax, shape=(-1, self.num_filter, 1, 1)))
+        bn3max = F.broadcast_mul(bn3max, F.reshape(data=xmax, shape=(-1, self.num_filter, 1, 1)))
         bn3min = F.broadcast_mul(bn3min, F.reshape(data=xmin, shape=(-1, self.num_filter, 1, 1)))
         
-        if self.dim_match:
-            shortcut = x[0]
-            shortcutmin = x[1]
-        else:
-            shortcut = self.fc_sc(x[0])
-            shortcut = self.bn_sc(shorcut)
+        if not self.dim_match:
+            shortcutmax = self.fc_sc(shortcutmax)
+            shortcutmax = self.bn_sc(shortcutmax)
             
-            shortcutmin = self.fc_sc(x[1])
-            shortcutmin = self.bn_scmin(shorcutmin)
+            shortcutmin = self.fc_sc(shortcutmin)
+            shortcutmin = self.bn_scmin(shortcutmin)
         
-        xmax = bn3 + shortcut
+        xmax = bn3max + shortcutmax
         xmin = bn3min + shortcutmin
         
         xmax = self.relu3(xmax)
@@ -198,7 +210,7 @@ class se_resnext(nn.HybridBlock):
         assert(num_unit == num_stage)
         
         self.conv0 = nn.Conv2D(in_channels=3, channels=filter_list[0], kernel_size=(7,7), strides=(2,2), padding=(3,3), use_bias=False, prefix='conv0_')
-        self.bn0 = nn.BatchNorm(in_channels=filter_list[0], epsilon=2e-5, momentum=bn_mom, prefix='bn0_')
+        self.bn0 = nn.BatchNorm(in_channels=filter_list[0], epsilon=2e-5, momentum=bn_mom, prefix='batchnorm0_')
         self.relu0 = nn.Activation(activation='relu', prefix='relu0_')
         self.relu0min = NReLu(prefix='relu0min_')
         self.pool0 = nn.MaxPool2D(pool_size=(3,3), strides=(2,2), padding=(1,1), prefix='pool0_')
@@ -213,7 +225,7 @@ class se_resnext(nn.HybridBlock):
         self.flatten1 = nn.Flatten(prefix='flatten1_')
         self.drop1 = nn.Dropout(rate=drop_out, prefix='dp1_')
         
-        self.fc = nn.Dense(units=num_class, in_units=filter_list[-1], prefix='fc_')
+        self.fc = nn.Dense(units=num_class, in_units=filter_list[-1], prefix='dense_')
         
     def hybrid_forward(self, F, x):
         x = self.conv0(x)
@@ -223,7 +235,8 @@ class se_resnext(nn.HybridBlock):
         xmax = self.pool0(xmax)
         xmin = -self.pool0(-xmin)
         
-        xmax, xmin = self.residual_stages([xmax, xmin])
+        for res_unit in self.residual_stages:
+            xmax, xmin = res_unit(xmax, xmin)
         
         xmax = self.pool1(xmax)
         xmax = self.flatten1(xmax)
